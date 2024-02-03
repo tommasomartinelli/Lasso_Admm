@@ -10,7 +10,7 @@ class LassoReg:
         self.tolerance = tolerance
         self.m = None
         self.n = None
-        self.W = None
+        self.A = None
         self.X = None
         self.Y = None
         self.J = []  # Initialize J as an empty list
@@ -18,7 +18,7 @@ class LassoReg:
 
     def fit(self, X, Y, algo, agents=None):
         self.m, self.n = X.shape
-        self.W = np.zeros(self.n)
+        self.A = np.zeros(self.n)
         self.X = X
         self.Y = Y
 
@@ -26,9 +26,8 @@ class LassoReg:
             self.gradient_descent()
         elif algo == "admm":
             self.admm_fit()
-        else:
+        elif algo == "dist":
             self.distributed_admm(agents)
-
     def admm_fit(self):
         rho = self.step_size
         z = np.zeros(self.n)
@@ -41,13 +40,18 @@ class LassoReg:
         for i in range(1, self.max_iterations + 1):
             last_z = z
 
-            self.W = np.linalg.solve(self.X.T @ self.X + rho * I, self.X.T @ self.Y + rho * (z - u))
-            z = self.soft_threshold(self.W + u, self.l1_penalty / rho)
-            u = u + self.W - z
+            # Aggiornamento di X
+            self.X = np.linalg.solve(self.A @ self.A.T + rho * I, self.A @ self.Y + rho * (z - u))
 
-            r_norm = np.linalg.norm(self.W - z)  # primary residual
+            # Aggiornamento di A
+            self.A = np.linalg.solve(self.X.T @ self.X + rho * I, self.X.T @ self.Y + rho * (z - u))
+
+            z = self.soft_threshold(self.X + u, self.l1_penalty / rho)
+            u = u + self.X - z
+
+            r_norm = np.linalg.norm(self.X - z)  # primary residual
             s_norm = np.linalg.norm(-rho * (z - last_z))  # dual residual
-            tol_prim = np.sqrt(self.n) * abs_tol + rel_tol * max(np.linalg.norm(self.W), np.linalg.norm(-z))
+            tol_prim = np.sqrt(self.n) * abs_tol + rel_tol * max(np.linalg.norm(self.X), np.linalg.norm(-z))
             tol_dual = np.sqrt(self.n) * abs_tol + rel_tol * np.linalg.norm(rho * u)
 
             self.iterations = i
@@ -56,21 +60,22 @@ class LassoReg:
             if r_norm < tol_prim and s_norm < tol_dual:
                 break
 
-        self.W = self.W.reshape(1, -1)
-
+        self.X = self.X.reshape(1, -1)
+        self.A = self.A.reshape(1, -1)
+    
     def gradient_descent(self):
         for i in range(1, self.max_iterations + 1):
             Y_predict = self.predict(self.X).flatten()
 
-            soft_term = self.soft_threshold(self.W, self.l1_penalty)
-            dW = (-2 * self.X.T @ (self.Y - Y_predict) + soft_term) / self.m
-            new_W = self.W - self.step_size * dW
+            soft_term = self.soft_threshold(self.A, self.l1_penalty)
+            dA = (-2 * self.X.T @ (self.Y - Y_predict) + soft_term) / self.m
+            new_A = self.A - self.step_size * dA
 
-            if np.mean(np.abs(new_W - self.W)) < self.tolerance:
+            if np.mean(np.abs(new_A - self.A)) < self.tolerance:
                 break
 
-            self.J.append((np.mean(np.abs(new_W - self.W)),))
-            self.W = new_W
+            self.J.append((np.mean(np.abs(new_A - self.A)),))
+            self.A = new_A
             self.iterations = i
 
     def distributed_admm(self, agents):
@@ -89,46 +94,47 @@ class LassoReg:
         print("Original X shape:", self.X.shape)
         print("Total rows used:", total_rows_used)
 
-        splitted_X = self.X[:total_rows_used, :].reshape((rows_per_agent, agents, c))  #qui si dividono i dati tra gli agenti
-        splitted_Y = np.reshape(self.Y[:total_rows_used], (rows_per_agent, agents)) 
-        self.W = np.zeros((agents, c))
+        splitted_X = self.X[:total_rows_used, :].reshape((rows_per_agent, agents, c))
+        splitted_Y = np.reshape(self.Y[:total_rows_used], (rows_per_agent, agents))
+        self.A = np.zeros((agents, c))
         u = np.zeros((agents, c))
 
         for i in range(1, self.max_iterations + 1):
             last_z = z
             for j in range(agents):
-                self.W[j, :] = np.linalg.solve(splitted_X[:, j, :].T @ splitted_X[:, j, :] + rho * I,
+                self.A[j, :] = np.linalg.solve(splitted_X[:, j, :].T @ splitted_X[:, j, :] + rho * I,
                                                splitted_X[:, j, :].T @ splitted_Y[:, j] + rho * (z - u[j, :]))
-                z = self.soft_threshold(np.mean(self.W, axis=0) + np.mean(u, axis=0), self.l1_penalty / rho) #questo probabilmente fuori dal for
-                u[j, :] = u[j, :] + (self.W[j, :] - z)
+            z = self.soft_threshold(np.mean(self.A, axis=0) + np.mean(u, axis=0), self.l1_penalty / rho)
+            for j in range(agents):
+                u[j, :] = u[j, :] + (self.A[j, :] - z)
 
-                r_norm = np.linalg.norm(np.mean(self.W, axis=0) - z)  # primary residual
-                s_norm = np.linalg.norm(-rho * (z - last_z))  # dual residual
-                tol_prim = np.sqrt(self.n) * abs_tol + rel_tol * max(np.linalg.norm(np.mean(self.W, axis=0)),
-                                                                     np.linalg.norm(-z))
-                tol_dual = np.sqrt(self.n) * abs_tol + rel_tol * np.linalg.norm(rho * np.mean(u, axis=0))
+            r_norm = np.linalg.norm(np.mean(self.A, axis=0) - z)  # primary residual
+            s_norm = np.linalg.norm(-rho * (z - last_z))  # dual residual
+            tol_prim = np.sqrt(self.n) * abs_tol + rel_tol * max(np.linalg.norm(np.mean(self.A, axis=0)),
+                                                                 np.linalg.norm(-z))
+            tol_dual = np.sqrt(self.n) * abs_tol + rel_tol * np.linalg.norm(rho * np.mean(u, axis=0))
 
-                self.J.append((r_norm, s_norm, tol_prim, tol_dual))
+            self.J.append((r_norm, s_norm, tol_prim, tol_dual))
 
-                if r_norm < tol_prim and s_norm < tol_dual:
-                    converged = True
-                    break
+            if r_norm < tol_prim and s_norm < tol_dual:
+                converged = True
+                break
 
             self.iterations = i
 
-            if converged:
-                break
+        if not converged:
+            print("ADMM did not converge within the specified number of iterations.")
 
-        self.W = np.mean(self.W, axis=0).reshape(1, -1)
+        self.A = np.mean(self.A, axis=0).reshape(1, -1)
 
     def predict(self, X):
-        return X @ self.W.T.flatten()
+        return X @ self.A.T.flatten()
 
-    def loss_function(self, Y, Y_predict, W):
+    def loss_function(self, Y, Y_predict, A):
         return 0.5 * np.sum((Y - Y_predict) ** 2) + self.l1_penalty * np.linalg.norm(W, 1)
 
-    def soft_threshold(self, w, th):
-        return np.maximum(0, w - th) - np.maximum(0, -w - th)
+    def soft_threshold(self, a, th):
+        return np.maximum(0, a - th) - np.maximum(0, -a - th)
 
     def mean_squared_error(self, Y_true, Y_predicted):
         return np.mean((Y_true - Y_predicted) ** 2)

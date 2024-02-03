@@ -1,6 +1,11 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_diabetes
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
+from sklearn.model_selection import train_test_split
+
 
 class LassoReg:
     def __init__(self, step_size, max_iterations, l1_penalty, tolerance):
@@ -89,8 +94,8 @@ class LassoReg:
         print("Original X shape:", self.X.shape)
         print("Total rows used:", total_rows_used)
 
-        splitted_X = self.X[:total_rows_used, :].reshape((rows_per_agent, agents, c))  #qui si dividono i dati tra gli agenti
-        splitted_Y = np.reshape(self.Y[:total_rows_used], (rows_per_agent, agents)) 
+        splitted_X = self.X[:total_rows_used, :].reshape((rows_per_agent, agents, c))
+        splitted_Y = np.reshape(self.Y[:total_rows_used], (rows_per_agent, agents))
         self.W = np.zeros((agents, c))
         u = np.zeros((agents, c))
 
@@ -99,7 +104,7 @@ class LassoReg:
             for j in range(agents):
                 self.W[j, :] = np.linalg.solve(splitted_X[:, j, :].T @ splitted_X[:, j, :] + rho * I,
                                                splitted_X[:, j, :].T @ splitted_Y[:, j] + rho * (z - u[j, :]))
-                z = self.soft_threshold(np.mean(self.W, axis=0) + np.mean(u, axis=0), self.l1_penalty / rho) #questo probabilmente fuori dal for
+                z = self.soft_threshold(np.mean(self.W, axis=0) + np.mean(u, axis=0), self.l1_penalty / rho)
                 u[j, :] = u[j, :] + (self.W[j, :] - z)
 
                 r_norm = np.linalg.norm(np.mean(self.W, axis=0) - z)  # primary residual
@@ -169,24 +174,22 @@ def plot_loss(lasso, label):
 
         plt.show()
 
-# Load data
-dataset = pd.read_csv('Lasso/dataset.csv')
+column_names = ['CRIM', 'ZN', 'INDUS', 'CHAS', 'NOX', 'RM', 'AGE', 'DIS', 'RAD', 'TAX', 'PTRATIO', 'B', 'LSTAT', 'MEDV']
+df = pd.read_csv('Lasso/housing/housing.csv', delimiter=r"\s+", names=column_names)
+
+df=df.drop(columns=["CHAS","ZN","RAD"] , axis=1)
+
+x=df.iloc[: , :-1]
+y=df.iloc[: , -1]
+
+X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.2 ,random_state=42)
+
 # Normalize data between [0,1]
-dataset.iloc[:, [0, 2, 3]] = (dataset.iloc[:, [0, 2, 3]] - dataset.iloc[:, [0, 2, 3]].min()) / (
-        dataset.iloc[:, [0, 2, 3]].max() - dataset.iloc[:, [0, 2, 3]].min())
-
-# Data split (train: 80%, test: 20%) -> randomized!
-cv = np.random.rand(len(dataset)) < 0.8
-train = dataset[cv]
-test = dataset[~cv]
-
-X_train = train.iloc[:, :9].values
-Y_train = train.iloc[:, 9].values
-X_test = test.iloc[:, :9].values
-Y_test = test.iloc[:, 9].values
+X_train = MinMaxScaler().fit_transform(X_train)
+X_test = MinMaxScaler().fit_transform(X_test)
 
 # Parameters
-iterations = 50000
+iterations = 100000
 step_size = 0.01
 l1_penalty = 1
 tolerance = 1e-4
@@ -211,7 +214,7 @@ print(lasso_admm.iterations)
 Y_predicted_admm = lasso_admm.predict(X_test)
 
 # Make Y_test and Y_predicted_admm one-dimensional arrays
-Y_test = Y_test.flatten()
+
 Y_predicted_admm = Y_predicted_admm.flatten()
 
 # Check dimensions before calling np.corrcoef
@@ -233,9 +236,6 @@ lasso_dist.fit(X_train, Y_train, "dist", agents)
 print(lasso_dist.iterations)
 Y_predicted_dist = lasso_dist.predict(X_test)
 
-# Check dimensions before calling np.corrcoef
-print("Shape Y_test:", Y_test.shape)
-print("Shape Y_predicted_dist:", Y_predicted_dist.shape)
 
 if Y_test.shape == Y_predicted_dist.shape:
     r2_dist = np.corrcoef(Y_test, Y_predicted_dist)[0, 1] ** 2
