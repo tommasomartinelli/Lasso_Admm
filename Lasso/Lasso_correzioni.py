@@ -112,6 +112,8 @@ class LassoReg:
             # Distribute updated information to agents
             for j in range(agents):
                 u[j, :] = u[j, :] + (self.W[j, :] - z)
+                
+            global_u = np.mean(u, axis=0)    
 
             r_norm = np.linalg.norm(global_W - z)  # primary residual
             s_norm = np.linalg.norm(-rho * (z - last_z))  # dual residual
