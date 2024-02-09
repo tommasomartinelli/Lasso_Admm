@@ -30,8 +30,10 @@ class LassoReg:
             self.gradient_descent()
         elif algo == "admm":
             self.admm_fit()
-        else:
+        elif algo == "distributed_admm":
             self.distributed_admm(agents)
+        else:
+            self.admm_splitted_by_features(X, Y, self.l1_penalty, self.step_size, self.max_iterations, self.tolerance, agents)
 
 
     def gradient_descent(self):
