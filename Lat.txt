@@ -1,9 +1,0 @@
-X sharing
-\begin{aligned}
-& \text{Minimize} \quad \lambda \|\underline{x}_i\|_1 + \frac{p}{2} \left\|A^{(i)} \underline{x}_i - \left(A^{(i)} \underline{x}_i^k + \underline{\bar{z}}^k - \overline{Ax}^k - \underline{\bar{u}}^k\right)\right\|_2^2 \\
-& \text{for } \forall i
-\end{aligned}
-z
-\underline{\bar{z}}^{k+1} = \frac{1}{N + \rho / 2}\left[\underline{y} + \frac{\rho}{2} N(\overline{A \underline{x}})^{k+1} + \frac{\rho N}{2} \underline{\bar{u}}^{k+1}\right]
-u
-\underline{\bar{u}}^{k+1} = \underline{\bar{u}}^k + (\overline{A} \underline{x})^{k+1} - \underline{\bar{z}}^{k+1}
